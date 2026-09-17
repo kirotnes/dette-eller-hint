@@ -161,6 +161,37 @@
   .row .pair > *:last-child { flex: 1; text-align: right; }
   .row .vs { color: var(--muted); font-size: 11px; font-weight: 400; }
   .row.same .pair > * { color: var(--ok); }
+
+  /* free text */
+  textarea {
+    width: 100%;
+    min-height: 160px;
+    padding: 14px 16px;
+    font-family: inherit;
+    font-size: 16px;
+    line-height: 1.5;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    color: var(--text);
+    resize: vertical;
+  }
+  textarea:focus { outline: none; border-color: var(--a); }
+  .counter { text-align: right; font-size: 12px; color: var(--muted); margin: 6px 2px 16px; }
+  .counter.near { color: var(--no); }
+
+  .trow {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 12px;
+  }
+  .trow > .qt { font-size: 15px; font-weight: 600; margin-bottom: 14px; }
+  .ans { border-left: 3px solid var(--a); padding-left: 12px; margin-top: 12px; }
+  .ans:nth-of-type(2) { border-left-color: var(--b); }
+  .ans b { display: block; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin-bottom: 3px; }
+  .ans p { margin: 0; white-space: pre-wrap; }
 </style>
 </head>
 <body>
@@ -169,7 +200,7 @@
   <!-- ROUND PICKER -->
   <section id="pick" class="hidden">
     <h1>Dette eller hint?</h1>
-    <p class="sub">12 kjappe valg. Svar, send lenka til den andre, se hvor like dere er.</p>
+    <p class="sub">Svar, send lenka til den andre, se hvor like dere er.</p>
     <div class="rounds" id="rounds"></div>
   </section>
 
@@ -188,9 +219,14 @@
     <div class="count" id="count"></div>
     <div class="cat" id="cat"></div>
     <div class="q" id="q"></div>
-    <div class="opts">
+    <div class="opts" id="opts">
       <button class="opt" id="optA"></button>
       <button class="opt" id="optB"></button>
+    </div>
+    <div id="textWrap" class="hidden">
+      <textarea id="text" maxlength="300" placeholder="Skriv i vei …"></textarea>
+      <div class="counter" id="counter">0 / 300</div>
+      <button class="primary" id="next">Neste</button>
     </div>
     <button class="ghost" id="back">← Tilbake</button>
   </section>
@@ -205,11 +241,12 @@
 
   <!-- RESULT -->
   <section id="result" class="hidden">
-    <div class="score">
+    <div class="score" id="scoreCard">
       <b id="pct">0%</b>
       <span id="scoreText"></span>
     </div>
-    <div class="names"><div id="n1"></div><div id="n2"></div></div>
+    <div class="names" id="namesRow"><div id="n1"></div><div id="n2"></div></div>
+    <h2 id="textHead" class="hidden"></h2>
     <div id="rows"></div>
     <button class="ghost" id="copyBoth">Kopier resultatlenke (send tilbake)</button>
     <button class="ghost" id="again">Ta en annen runde</button>
@@ -254,7 +291,20 @@ const ROUNDS = [
       { cat: 'Hverdagskrangler',   q: 'Brunost eller nei takk?',                        a: 'Brunost',         b: 'Nei takk' },
     ],
   },
+  {
+    name: 'Runde 3',
+    tag: 'Tre store spørsmål — skriv fritt',
+    type: 'text',
+    questions: [
+      { cat: 'Deg selv',   q: 'Hva er dine tre beste og tre verste egenskaper?', ph: 'Tre du liker ved deg selv, og tre du helst skulle vært foruten …' },
+      { cat: 'Hvile',      q: 'Hva gjør du når du skal slappe av?',              ph: 'En helt vanlig kveld uten planer — hva skjer?' },
+      { cat: 'Den andre',  q: 'Hvordan vil du at partneren din skal være?',      ph: 'Egenskaper, verdier, humor — det som faktisk betyr noe …' },
+    ],
+  },
 ];
+
+const MAXLEN = 300;
+const isText = () => ROUNDS[roundIdx].type === 'text';
 
 const $ = id => document.getElementById(id);
 
@@ -267,27 +317,57 @@ let step = 0;
 
 const setRound = i => { roundIdx = i; questions = ROUNDS[i].questions; };
 
-// --- encode/decode: name + answer bits packed into the URL hash ---
-function pack(name, answers) {
-  // leading 1 sentinel keeps leading zeros; base36 keeps it short
-  const bits = parseInt('1' + answers.join(''), 2).toString(36);
-  return encodeURIComponent(name) + '.' + bits;
+// --- base64url + optional deflate, for the bulkier free-text payloads ---
+const b64 = {
+  enc: bytes => btoa(Array.from(bytes, c => String.fromCharCode(c)).join(''))
+    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''),
+  dec: s => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0)),
+};
+async function squeeze(bytes, mode) {
+  const Stream = mode === 'in' ? self.CompressionStream : self.DecompressionStream;
+  if (!Stream) return null;
+  try {
+    const s = new Blob([bytes]).stream().pipeThrough(new Stream('deflate-raw'));
+    return new Uint8Array(await new Response(s).arrayBuffer());
+  } catch (e) { return null; }
 }
-function unpack(str, n) {
-  const i = str.lastIndexOf('.');
-  const name = decodeURIComponent(str.slice(0, i));
-  const bin = parseInt(str.slice(i + 1), 36).toString(2).slice(1); // drop sentinel
-  if (bin.length !== n) throw new Error('bad payload');
-  return { name, answers: bin.split('').map(Number) };
+
+// --- encode/decode: name + answers packed into the URL hash ---
+// choice rounds: "Navn.<bits-as-base36>"  |  text rounds: "z<b64>" (deflated) or "u<b64>"
+async function pack(name, answers) {
+  if (!isText()) {
+    // leading 1 sentinel keeps leading zeros; base36 keeps it short
+    const bits = parseInt('1' + answers.join(''), 2).toString(36);
+    return encodeURIComponent(name) + '.' + bits;
+  }
+  const raw = new TextEncoder().encode(JSON.stringify([name, ...answers]));
+  const gz = await squeeze(raw, 'in');
+  return gz && gz.length < raw.length ? 'z' + b64.enc(gz) : 'u' + b64.enc(raw);
 }
-function readHash() {
+async function unpack(str, round) {
+  if (round.type !== 'text') {
+    const i = str.lastIndexOf('.');
+    const name = decodeURIComponent(str.slice(0, i));
+    const bin = parseInt(str.slice(i + 1), 36).toString(2).slice(1); // drop sentinel
+    if (bin.length !== round.questions.length) throw new Error('bad payload');
+    return { name, answers: bin.split('').map(Number) };
+  }
+  let bytes = b64.dec(str.slice(1));
+  if (str[0] === 'z') {
+    bytes = await squeeze(bytes, 'out');
+    if (!bytes) throw new Error('no DecompressionStream');
+  }
+  const [name, ...answers] = JSON.parse(new TextDecoder().decode(bytes));
+  if (answers.length !== round.questions.length) throw new Error('bad payload');
+  return { name, answers };
+}
+async function readHash() {
   const p = new URLSearchParams(location.hash.slice(1));
   // no r= means a round-1 link from before the picker existed
   const r = Math.min(Math.max(parseInt(p.get('r') || '0', 10) || 0, 0), ROUNDS.length - 1);
-  const n = ROUNDS[r].questions.length;
   const out = { r };
   for (const k of ['a', 'b']) {
-    if (p.has(k)) { try { out[k] = unpack(p.get(k), n); } catch (e) { /* ignore junk */ } }
+    if (p.has(k)) { try { out[k] = await unpack(p.get(k), ROUNDS[r]); } catch (e) { /* ignore junk */ } }
   }
   return out;
 }
@@ -309,8 +389,10 @@ $('rounds').onclick = e => {
 function toName() {
   $('startTitle').textContent = ROUNDS[roundIdx].name;
   $('startSub').textContent = other
-    ? `${other.name} har svart på ${ROUNDS[roundIdx].name.toLowerCase()}. Svar du også, så ser dere sammenligningen.`
-    : `${questions.length} kjappe valg — ${ROUNDS[roundIdx].tag.toLowerCase()}.`;
+    ? `${other.name} har svart på ${ROUNDS[roundIdx].name.toLowerCase()}. Svar du også, så ser dere svarene.`
+    : isText()
+      ? `${questions.length} spørsmål, ingen fasit. Skriv så langt eller kort du vil — maks ${MAXLEN} tegn.`
+      : `${questions.length} kjappe valg — ${ROUNDS[roundIdx].tag.toLowerCase()}.`;
   $('changeRound').classList.toggle('hidden', !!other);
   show('start');
   $('name').focus();
@@ -323,9 +405,25 @@ function render() {
   $('count').textContent = `Spørsmål ${step + 1} av ${questions.length}`;
   $('cat').textContent = item.cat;
   $('q').textContent = item.q;
-  $('optA').textContent = item.a;
-  $('optB').textContent = item.b;
+  $('opts').classList.toggle('hidden', isText());
+  $('textWrap').classList.toggle('hidden', !isText());
+  if (isText()) {
+    $('text').value = me.answers[step] || '';
+    $('text').placeholder = item.ph;
+    countText();
+    $('text').focus();
+  } else {
+    $('optA').textContent = item.a;
+    $('optB').textContent = item.b;
+  }
   $('back').classList.toggle('hidden', step === 0);
+}
+
+function countText() {
+  const n = $('text').value.length;
+  $('counter').textContent = `${n} / ${MAXLEN}`;
+  $('counter').classList.toggle('near', n > MAXLEN - 40);
+  $('next').disabled = !$('text').value.trim();
 }
 
 function answer(v) {
@@ -334,10 +432,10 @@ function answer(v) {
   if (step < questions.length) render(); else finish();
 }
 
-function finish() {
-  const mine = pack(me.name, me.answers);
+async function finish() {
+  const mine = await pack(me.name, me.answers);
   if (other) {
-    location.hash = `r=${roundIdx}&a=${pack(other.name, other.answers)}&b=${mine}`;
+    location.hash = `r=${roundIdx}&a=${await pack(other.name, other.answers)}&b=${mine}`;
     showResult(other, me);
   } else {
     const url = `${baseUrl()}#r=${roundIdx}&a=${mine}`;
@@ -348,7 +446,14 @@ function finish() {
 }
 
 // --- result ---
+const esc = s => String(s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+
 function showResult(p1, p2) {
+  $('scoreCard').classList.toggle('hidden', isText());
+  $('namesRow').classList.toggle('hidden', isText());
+  $('textHead').classList.toggle('hidden', !isText());
+  if (isText()) return showTextResult(p1, p2);
+
   const same = questions.filter((_, i) => p1.answers[i] === p2.answers[i]).length;
   const n = questions.length;
   $('pct').textContent = Math.round(same / n * 100) + '%';
@@ -358,7 +463,6 @@ function showResult(p1, p2) {
   $('rows').innerHTML = questions.map((item, i) => {
     const pick = p => p.answers[i] ? item.b : item.a;
     const match = p1.answers[i] === p2.answers[i];
-    const esc = s => s.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
     return `<div class="row ${match ? 'same' : ''}">
       <div class="qt">${esc(item.q)}</div>
       <div class="pair">
@@ -368,6 +472,19 @@ function showResult(p1, p2) {
       </div>
     </div>`;
   }).join('');
+  $('copyBoth').dataset.url = location.href;
+  show('result');
+}
+
+// free-text rounds have nothing to score — just put the answers side by side
+function showTextResult(p1, p2) {
+  $('textHead').textContent = `${p1.name} og ${p2.name} · ${ROUNDS[roundIdx].name}`;
+  $('rows').innerHTML = questions.map((item, i) => `
+    <div class="trow">
+      <div class="qt">${esc(item.q)}</div>
+      <div class="ans"><b>${esc(p1.name)}</b><p>${esc(p1.answers[i])}</p></div>
+      <div class="ans"><b>${esc(p2.name)}</b><p>${esc(p2.answers[i])}</p></div>
+    </div>`).join('');
   $('copyBoth').dataset.url = location.href;
   show('result');
 }
@@ -384,6 +501,8 @@ $('go').onclick = () => {
 $('name').onkeydown = e => { if (e.key === 'Enter') $('go').click(); };
 $('optA').onclick = () => answer(0);
 $('optB').onclick = () => answer(1);
+$('text').oninput = countText;
+$('next').onclick = () => { if ($('text').value.trim()) answer($('text').value.trim()); };
 $('back').onclick = () => { if (step > 0) { step--; render(); } };
 $('changeRound').onclick = () => show('pick');
 $('again').onclick = () => { location.hash = ''; other = null; show('pick'); };
@@ -399,8 +518,8 @@ $('copy').onclick = e => copy(e.target);
 $('copyBoth').onclick = e => copy(e.target);
 
 // --- boot ---
-(function boot() {
-  const h = readHash();
+(async function boot() {
+  const h = await readHash();
   setRound(h.r);
   if (h.a && h.b) {
     showResult(h.a, h.b);          // both done — anyone with this link sees the comparison
