@@ -69,6 +69,23 @@
     margin-top: 10px;
   }
 
+  /* round picker */
+  .rounds { display: grid; gap: 12px; }
+  .round {
+    padding: 18px;
+    text-align: left;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    color: var(--text);
+    cursor: pointer;
+    transition: transform .08s ease, border-color .15s ease, background .15s ease;
+  }
+  .round:hover { border-color: var(--a); background: var(--card-hi); }
+  .round:active { transform: scale(.985); }
+  .round b { display: block; font-size: 18px; font-weight: 600; margin-bottom: 3px; }
+  .round span { color: var(--muted); font-size: 14px; }
+
   /* progress */
   .bar { height: 4px; background: var(--line); border-radius: 99px; overflow: hidden; margin-bottom: 8px; }
   .bar > i { display: block; height: 100%; background: var(--a); transition: width .25s ease; }
@@ -149,12 +166,20 @@
 <body>
 <main>
 
-  <!-- START -->
-  <section id="start">
+  <!-- ROUND PICKER -->
+  <section id="pick" class="hidden">
     <h1>Dette eller hint?</h1>
-    <p class="sub" id="startSub">12 kjappe valg. Svar, send lenka til den andre, se hvor like dere er.</p>
+    <p class="sub">12 kjappe valg. Svar, send lenka til den andre, se hvor like dere er.</p>
+    <div class="rounds" id="rounds"></div>
+  </section>
+
+  <!-- NAME -->
+  <section id="start" class="hidden">
+    <h1 id="startTitle">Dette eller hint?</h1>
+    <p class="sub" id="startSub"></p>
     <input type="text" id="name" placeholder="Fornavnet ditt" autocomplete="given-name" maxlength="20">
     <button class="primary" id="go">Start</button>
+    <button class="ghost hidden" id="changeRound">← Velg en annen runde</button>
   </section>
 
   <!-- QUIZ -->
@@ -187,27 +212,60 @@
     <div class="names"><div id="n1"></div><div id="n2"></div></div>
     <div id="rows"></div>
     <button class="ghost" id="copyBoth">Kopier resultatlenke (send tilbake)</button>
+    <button class="ghost" id="again">Ta en annen runde</button>
   </section>
 
 </main>
 <script>
-const QUESTIONS = [
-  { cat: 'Drikke og uteliv',     q: 'Øl eller vin?',                                a: 'Øl',                     b: 'Vin' },
-  { cat: 'Drikke og uteliv',     q: 'Kaffe eller te?',                              a: 'Kaffe',                  b: 'Te' },
-  { cat: 'Drikke og uteliv',     q: 'Utested eller hjemmefest?',                    a: 'Utested',                b: 'Hjemmefest' },
-  { cat: 'Drikke og uteliv',     q: 'Fint restaurantbesøk eller gatemat?',          a: 'Fin restaurant',         b: 'Gatemat' },
-  { cat: 'Reise og opplevelser', q: 'Storby eller syden?',                          a: 'Storby',                 b: 'Syden' },
-  { cat: 'Reise og opplevelser', q: 'Hotelluksus eller telttur på fjellet?',        a: 'Hotelluksus',            b: 'Telttur på fjellet' },
-  { cat: 'Reise og opplevelser', q: 'Planlegge alt eller ta ting på sparket?',      a: 'Planlegge alt',          b: 'Ta det på sparket' },
-  { cat: 'Reise og opplevelser', q: 'Museum og kultur eller fornøyelsespark?',      a: 'Museum og kultur',       b: 'Fornøyelsespark' },
-  { cat: 'Hverdag og livsstil',  q: 'Bysommer eller hytteliv?',                     a: 'Bysommer',               b: 'Hytteliv' },
-  { cat: 'Hverdag og livsstil',  q: 'B-menneske eller A-menneske?',                 a: 'B-menneske',             b: 'A-menneske' },
-  { cat: 'Hverdag og livsstil',  q: 'Hund eller katt?',                             a: 'Hund',                   b: 'Katt' },
-  { cat: 'Hverdag og livsstil',  q: 'Se film hjemme eller gå på kino?',             a: 'Film hjemme',            b: 'Kino' },
+const ROUNDS = [
+  {
+    name: 'Runde 1',
+    tag: 'Drikke, reise og hverdag',
+    questions: [
+      { cat: 'Drikke og uteliv',     q: 'Øl eller vin?',                           a: 'Øl',               b: 'Vin' },
+      { cat: 'Drikke og uteliv',     q: 'Kaffe eller te?',                         a: 'Kaffe',            b: 'Te' },
+      { cat: 'Drikke og uteliv',     q: 'Utested eller hjemmefest?',               a: 'Utested',          b: 'Hjemmefest' },
+      { cat: 'Drikke og uteliv',     q: 'Fint restaurantbesøk eller gatemat?',     a: 'Fin restaurant',   b: 'Gatemat' },
+      { cat: 'Reise og opplevelser', q: 'Storby eller syden?',                     a: 'Storby',           b: 'Syden' },
+      { cat: 'Reise og opplevelser', q: 'Hotelluksus eller telttur på fjellet?',   a: 'Hotelluksus',      b: 'Telttur på fjellet' },
+      { cat: 'Reise og opplevelser', q: 'Planlegge alt eller ta ting på sparket?', a: 'Planlegge alt',    b: 'Ta det på sparket' },
+      { cat: 'Reise og opplevelser', q: 'Museum og kultur eller fornøyelsespark?', a: 'Museum og kultur', b: 'Fornøyelsespark' },
+      { cat: 'Hverdag og livsstil',  q: 'Bysommer eller hytteliv?',                a: 'Bysommer',         b: 'Hytteliv' },
+      { cat: 'Hverdag og livsstil',  q: 'B-menneske eller A-menneske?',            a: 'B-menneske',       b: 'A-menneske' },
+      { cat: 'Hverdag og livsstil',  q: 'Hund eller katt?',                        a: 'Hund',             b: 'Katt' },
+      { cat: 'Hverdag og livsstil',  q: 'Se film hjemme eller gå på kino?',        a: 'Film hjemme',      b: 'Kino' },
+    ],
+  },
+  {
+    name: 'Runde 2',
+    tag: 'Mat, helg og hverdagskrangler',
+    questions: [
+      { cat: 'Mat og kos',         q: 'Taco eller pizza?',                              a: 'Taco',            b: 'Pizza' },
+      { cat: 'Mat og kos',         q: 'Søtt eller salt?',                               a: 'Søtt',            b: 'Salt' },
+      { cat: 'Mat og kos',         q: 'Lage mat selv eller bestille hjem?',             a: 'Lage mat selv',   b: 'Bestille hjem' },
+      { cat: 'Helg og fritid',     q: 'Sove lenge eller opp tidlig i helga?',           a: 'Sove lenge',      b: 'Opp tidlig' },
+      { cat: 'Helg og fritid',     q: 'Konsert eller festival?',                        a: 'Konsert',         b: 'Festival' },
+      { cat: 'Folk og sosialt',    q: 'Stor gjeng eller få nære?',                      a: 'Stor gjeng',      b: 'Få nære' },
+      { cat: 'Folk og sosialt',    q: 'Ringe eller sende melding?',                     a: 'Ringe',           b: 'Sende melding' },
+      { cat: 'Skjerm og lyd',      q: 'Serie eller film?',                              a: 'Serie',           b: 'Film' },
+      { cat: 'Skjerm og lyd',      q: 'Binge hele sesongen eller én episode om gangen?', a: 'Binge alt',      b: 'Én om gangen' },
+      { cat: 'Penger',             q: 'Spare eller bruke?',                             a: 'Spare',           b: 'Bruke' },
+      { cat: 'Hverdagskrangler',   q: 'Seng redd opp eller rotete?',                    a: 'Redd opp',        b: 'Rotete' },
+      { cat: 'Hverdagskrangler',   q: 'Brunost eller nei takk?',                        a: 'Brunost',         b: 'Nei takk' },
+    ],
+  },
 ];
 
 const $ = id => document.getElementById(id);
-const N = QUESTIONS.length;
+
+// --- state ---
+let roundIdx = 0;
+let questions = ROUNDS[0].questions;
+let me = { name: '', answers: [] };
+let other = null;   // person 1's entry, when we arrived via a shared link
+let step = 0;
+
+const setRound = i => { roundIdx = i; questions = ROUNDS[i].questions; };
 
 // --- encode/decode: name + answer bits packed into the URL hash ---
 function pack(name, answers) {
@@ -215,38 +273,54 @@ function pack(name, answers) {
   const bits = parseInt('1' + answers.join(''), 2).toString(36);
   return encodeURIComponent(name) + '.' + bits;
 }
-function unpack(str) {
+function unpack(str, n) {
   const i = str.lastIndexOf('.');
   const name = decodeURIComponent(str.slice(0, i));
   const bin = parseInt(str.slice(i + 1), 36).toString(2).slice(1); // drop sentinel
-  if (bin.length !== N) throw new Error('bad payload');
+  if (bin.length !== n) throw new Error('bad payload');
   return { name, answers: bin.split('').map(Number) };
 }
 function readHash() {
   const p = new URLSearchParams(location.hash.slice(1));
-  const out = {};
+  // no r= means a round-1 link from before the picker existed
+  const r = Math.min(Math.max(parseInt(p.get('r') || '0', 10) || 0, 0), ROUNDS.length - 1);
+  const n = ROUNDS[r].questions.length;
+  const out = { r };
   for (const k of ['a', 'b']) {
-    if (p.has(k)) { try { out[k] = unpack(p.get(k)); } catch (e) { /* ignore junk */ } }
+    if (p.has(k)) { try { out[k] = unpack(p.get(k), n); } catch (e) { /* ignore junk */ } }
   }
   return out;
 }
 const baseUrl = () => location.href.split('#')[0];
 
-// --- state ---
-let me = { name: '', answers: [] };
-let other = null;   // person 1's entry, when we arrived via a shared link
-let step = 0;
-
 const show = id => {
-  ['start', 'quiz', 'share', 'result'].forEach(s => $(s).classList.toggle('hidden', s !== id));
+  ['pick', 'start', 'quiz', 'share', 'result'].forEach(s => $(s).classList.toggle('hidden', s !== id));
   window.scrollTo(0, 0);
 };
 
+// --- round picker ---
+$('rounds').innerHTML = ROUNDS.map((r, i) =>
+  `<button class="round" data-i="${i}"><b>${r.name}</b><span>${r.tag}</span></button>`).join('');
+$('rounds').onclick = e => {
+  const btn = e.target.closest('.round');
+  if (btn) { setRound(+btn.dataset.i); toName(); }
+};
+
+function toName() {
+  $('startTitle').textContent = ROUNDS[roundIdx].name;
+  $('startSub').textContent = other
+    ? `${other.name} har svart på ${ROUNDS[roundIdx].name.toLowerCase()}. Svar du også, så ser dere sammenligningen.`
+    : `${questions.length} kjappe valg — ${ROUNDS[roundIdx].tag.toLowerCase()}.`;
+  $('changeRound').classList.toggle('hidden', !!other);
+  show('start');
+  $('name').focus();
+}
+
 // --- quiz ---
 function render() {
-  const item = QUESTIONS[step];
-  $('fill').style.width = (step / N * 100) + '%';
-  $('count').textContent = `Spørsmål ${step + 1} av ${N}`;
+  const item = questions[step];
+  $('fill').style.width = (step / questions.length * 100) + '%';
+  $('count').textContent = `Spørsmål ${step + 1} av ${questions.length}`;
   $('cat').textContent = item.cat;
   $('q').textContent = item.q;
   $('optA').textContent = item.a;
@@ -257,16 +331,16 @@ function render() {
 function answer(v) {
   me.answers[step] = v;
   step++;
-  if (step < N) render(); else finish();
+  if (step < questions.length) render(); else finish();
 }
 
 function finish() {
   const mine = pack(me.name, me.answers);
   if (other) {
-    location.hash = `a=${pack(other.name, other.answers)}&b=${mine}`;
+    location.hash = `r=${roundIdx}&a=${pack(other.name, other.answers)}&b=${mine}`;
     showResult(other, me);
   } else {
-    const url = baseUrl() + '#a=' + mine;
+    const url = `${baseUrl()}#r=${roundIdx}&a=${mine}`;
     $('link').textContent = url;
     $('copy').dataset.url = url;
     show('share');
@@ -275,22 +349,22 @@ function finish() {
 
 // --- result ---
 function showResult(p1, p2) {
-  const same = QUESTIONS.filter((_, i) => p1.answers[i] === p2.answers[i]).length;
-  const pct = Math.round(same / N * 100);
-  $('pct').textContent = pct + '%';
-  $('scoreText').textContent = `${same} av ${N} like svar — ${p1.name} og ${p2.name}`;
+  const same = questions.filter((_, i) => p1.answers[i] === p2.answers[i]).length;
+  const n = questions.length;
+  $('pct').textContent = Math.round(same / n * 100) + '%';
+  $('scoreText').textContent = `${same} av ${n} like svar — ${p1.name} og ${p2.name} · ${ROUNDS[roundIdx].name}`;
   $('n1').textContent = p1.name;
   $('n2').textContent = p2.name;
-  $('rows').innerHTML = QUESTIONS.map((item, i) => {
-    const pick = (p, i) => p.answers[i] ? QUESTIONS[i].b : QUESTIONS[i].a;
+  $('rows').innerHTML = questions.map((item, i) => {
+    const pick = p => p.answers[i] ? item.b : item.a;
     const match = p1.answers[i] === p2.answers[i];
     const esc = s => s.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
     return `<div class="row ${match ? 'same' : ''}">
       <div class="qt">${esc(item.q)}</div>
       <div class="pair">
-        <div>${esc(pick(p1, i))}</div>
+        <div>${esc(pick(p1))}</div>
         ${match ? '' : '<div class="vs">vs</div>'}
-        <div>${esc(pick(p2, i))}</div>
+        <div>${esc(pick(p2))}</div>
       </div>
     </div>`;
   }).join('');
@@ -302,9 +376,8 @@ function showResult(p1, p2) {
 $('go').onclick = () => {
   const n = $('name').value.trim();
   if (!n) { $('name').focus(); return; }
-  me.name = n;
+  me = { name: n, answers: [] };
   step = 0;
-  me.answers = [];
   render();
   show('quiz');
 };
@@ -312,6 +385,8 @@ $('name').onkeydown = e => { if (e.key === 'Enter') $('go').click(); };
 $('optA').onclick = () => answer(0);
 $('optB').onclick = () => answer(1);
 $('back').onclick = () => { if (step > 0) { step--; render(); } };
+$('changeRound').onclick = () => show('pick');
+$('again').onclick = () => { location.hash = ''; other = null; show('pick'); };
 
 async function copy(btn) {
   const url = btn.dataset.url;
@@ -326,14 +401,14 @@ $('copyBoth').onclick = e => copy(e.target);
 // --- boot ---
 (function boot() {
   const h = readHash();
+  setRound(h.r);
   if (h.a && h.b) {
     showResult(h.a, h.b);          // both done — anyone with this link sees the comparison
   } else if (h.a) {
     other = h.a;                    // person 2 arriving via the shared link
-    $('startSub').textContent = `${other.name} har svart. Svar du også, så ser dere sammenligningen.`;
-    show('start');
+    toName();
   } else {
-    show('start');
+    show('pick');
   }
 })();
 </script>
