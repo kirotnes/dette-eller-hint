@@ -84,7 +84,21 @@
   .round:hover { border-color: var(--a); background: var(--card-hi); }
   .round:active { transform: scale(.985); }
   .round b { display: block; font-size: 18px; font-weight: 600; margin-bottom: 3px; }
-  .round span { color: var(--muted); font-size: 14px; }
+  .round span { display: block; color: var(--muted); font-size: 14px; }
+  .round em {
+    display: inline-block;
+    margin-top: 10px;
+    font-style: normal;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: var(--a);
+    background: rgba(124, 92, 255, .14);
+    padding: 3px 9px;
+    border-radius: 99px;
+  }
+  .round em.txt { color: var(--b); background: rgba(0, 194, 168, .14); }
 
   /* progress */
   .bar { height: 4px; background: var(--line); border-radius: 99px; overflow: hidden; margin-bottom: 8px; }
@@ -293,7 +307,7 @@ const ROUNDS = [
   },
   {
     name: 'Runde 3',
-    tag: 'Tre store spørsmål — skriv fritt',
+    tag: 'Tre store spørsmål',
     type: 'text',
     questions: [
       { cat: 'Deg selv',   q: 'Hva er dine tre beste og tre verste egenskaper?', ph: 'Tre du liker ved deg selv, og tre du helst skulle vært foruten …' },
@@ -317,7 +331,6 @@ const ROUNDS = [
     tag: 'De dype spørsmålene',
     type: 'text',
     questions: [
-      { cat: 'Kommunikasjon',  q: 'Hvilken type kommunikasjon får deg til å trekke deg unna?',          ph: 'Tonefall, stillhet, krangling, mas — hva lukker deg?' },
       { cat: 'Erfaring',       q: 'Hva lærte tidligere forhold deg om hva du trenger?',                 ph: 'Det du skjønte først etterpå …' },
       { cat: 'Frykt',          q: 'Hvilken frykt har du når det gjelder kjærlighet?',                   ph: 'Den du sjelden sier høyt.' },
       { cat: 'Misforståelser', q: 'Hva er den største misforståelsen folk har om deg som partner?',     ph: 'Hva tror folk om deg som ikke stemmer?' },
@@ -333,6 +346,40 @@ const ROUNDS = [
       { cat: 'Uten frykt',     q: 'Hvem ville du vært som kjæreste hvis ingen var redde for å bli såret?', ph: 'Den versjonen av deg som ikke holder igjen …' },
       { cat: 'Grønt flagg',    q: 'Hva er det grønne flagget du ser etter hos noen?',                      ph: 'Den lille tingen som får deg til å slappe av.' },
       { cat: 'Gjenkjennelsen', q: 'Hva gjør at du tenker «denne personen kunne jeg bygget et liv med»?',   ph: 'Øyeblikket der det plutselig føles opplagt …' },
+    ],
+  },
+  {
+    name: 'Runde 7',
+    tag: 'Kjærlighet og nærhet',
+    type: 'text',
+    questions: [
+      { cat: 'Å bli elsket',  q: 'Når føler du deg mest elsket av en partner?',                    ph: 'Et konkret øyeblikk sier mer enn en liste …' },
+      { cat: 'Forelskelse',   q: 'Hva er forskjellen på å være forelsket og å elske noen?',        ph: 'Har du kjent begge deler? Hva skilte dem?' },
+      { cat: 'Når det røyner', q: 'Hva trenger du mest av i et forhold når livet er vanskelig?',   ph: 'Nærhet, ro, praktisk hjelp — eller å få være i fred?' },
+      { cat: 'Ditt språk',    q: 'Hvordan viser du vanligvis kjærlighet til andre?',               ph: 'Det du gjør uten å tenke over det …' },
+      { cat: 'Trygghet',      q: 'Hva gjør at du føler deg trygg i et forhold?',                   ph: 'Hva må være på plass før du tør å slappe helt av?' },
+    ],
+  },
+  {
+    name: 'Runde 8',
+    tag: 'Hverdagsliv',
+    type: 'text',
+    questions: [
+      { cat: 'Om ti år',   q: 'Hvordan ser et ideelt liv med en partner ut om 10 år?',            ph: 'Hvor bor dere, hva gjør dere på en helt vanlig tirsdag?' },
+      { cat: 'Lagspill',   q: 'Hva betyr det å være et team for deg?',                            ph: 'Hva skiller et par som er et lag fra et som bare bor sammen?' },
+      { cat: 'Alenetid',   q: 'Hvor mye tid trenger du alene kontra sammen med partneren?',       ph: 'Vær ærlig — det er her mange kolliderer …' },
+      { cat: 'Prioritet',  q: 'Hva tenker du er viktigst å prioritere i hverdagen som par?',      ph: 'Det som ryker først når det blir travelt, men ikke burde …' },
+    ],
+  },
+  {
+    name: 'Runde 9',
+    tag: 'Kommunikasjon',
+    type: 'text',
+    questions: [
+      { cat: 'Konflikt',   q: 'Hvordan ønsker du at konflikter skal håndteres?',                  ph: 'Ta det med en gang, eller sove på det først?' },
+      { cat: 'Det svære',  q: 'Hva er det vanskeligste å snakke om med en partner?',              ph: 'Temaet du helst utsetter …' },
+      { cat: 'Å bli hørt', q: 'Hva gjør at du føler deg hørt og forstått?',                       ph: 'Hva må den andre faktisk gjøre for at det lander?' },
+      { cat: 'Stengsel',   q: 'Hvilken type kommunikasjon får deg til å trekke deg unna?',        ph: 'Tonefall, stillhet, krangling, mas — hva lukker deg?' },
     ],
   },
 ];
@@ -413,8 +460,11 @@ const show = id => {
 };
 
 // --- round picker ---
+const roundMeta = r => r.type === 'text'
+  ? `<em class="txt">${r.questions.length} spørsmål · skriv fritt</em>`
+  : `<em>${r.questions.length} kjappe valg</em>`;
 $('rounds').innerHTML = ROUNDS.map((r, i) =>
-  `<button class="round" data-i="${i}"><b>${r.name}</b><span>${r.tag}</span></button>`).join('');
+  `<button class="round" data-i="${i}"><b>${r.name}</b><span>${r.tag}</span>${roundMeta(r)}</button>`).join('');
 $('rounds').onclick = e => {
   const btn = e.target.closest('.round');
   if (btn) { setRound(+btn.dataset.i); toName(); }
